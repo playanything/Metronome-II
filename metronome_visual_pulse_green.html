@@ -1,0 +1,267 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Metronome with First Beat Accent</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      text-align: center;
+      padding: 2em;
+      background: #f0f0f0;
+    }
+    #bpm-display {
+      font-size: 3em;
+      margin-bottom: 1em;
+      transition: color 0.2s ease;
+    }
+    #bpm-slider {
+      width: 300px;
+      margin-bottom: 1em;
+      accent-color: #007BFF;
+    }
+    #start-btn {
+      width: 300px;
+      padding: 1em;
+      font-size: 1em;
+      color: white;
+      background-color: green;
+      border: none;
+      border-radius: 8px;
+      margin-bottom: 1em;
+    }
+    #start-btn.running {
+      background-color: red;
+    }
+    .tempo-controls, .bottom-controls, .accent-controls {
+      display: flex;
+      gap: 1em;
+      width: 300px;
+      justify-content: space-between;
+      margin: 0 auto 1em;
+    }
+    .tempo-controls button, .bottom-controls button, .accent-controls button {
+      flex: 1;
+      padding: 0.8em;
+      font-size: 1em;
+      border: none;
+      border-radius: 6px;
+      color: white;
+      cursor: pointer;
+    }
+    #half-btn, #double-btn {
+      background-color: #333;
+    }
+    #tap-btn {
+      background-color: #004c99;
+      transition: background-color 0.1s ease;
+    }
+    #pulse-toggle {
+      background-color: #777;
+    }
+    .accent-controls button {
+      background-color: #888;
+    }
+    .accent-controls button.active {
+      background-color: #007BFF;
+    }
+    #pulse-indicator {
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      background-color: #aaa;
+      margin: 1em auto 0;
+      transition: background-color 0.1s ease;
+      visibility: hidden;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="bpm-display">100 BPM</div>
+  <input type="range" id="bpm-slider" min="30" max="300" value="100" />
+  <br />
+  <button id="start-btn">Start</button>
+
+  <div class="tempo-controls">
+    <button id="half-btn">½ Tempo</button>
+    <button id="double-btn">2× Tempo</button>
+  </div>
+
+  <div class="bottom-controls">
+    <button id="tap-btn">Tap Tempo</button>
+    <button id="pulse-toggle">Show Pulse</button>
+  </div>
+
+  <div class="accent-controls">
+    <button data-accent="0" class="accent-btn active">No Accent</button>
+    <button data-accent="2" class="accent-btn">2/4</button>
+    <button data-accent="3" class="accent-btn">3/4</button>
+    <button data-accent="4" class="accent-btn">4/4</button>
+  </div>
+
+  <div id="pulse-indicator"></div>
+
+  <script>
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    let bpm = 100;
+    let intervalId = null;
+    let tapTimes = [];
+    let showPulse = false;
+    let skipBeats = false;
+    let accentBeats = 0;
+    let currentBeat = 0;
+    const skipDuration = 400;
+    const firstBeatDelay = 120;
+
+    const bpmSlider = document.getElementById("bpm-slider");
+    const bpmDisplay = document.getElementById("bpm-display");
+    const startBtn = document.getElementById("start-btn");
+    const halfBtn = document.getElementById("half-btn");
+    const doubleBtn = document.getElementById("double-btn");
+    const tapBtn = document.getElementById("tap-btn");
+    const pulseToggle = document.getElementById("pulse-toggle");
+    const pulseIndicator = document.getElementById("pulse-indicator");
+    const accentButtons = document.querySelectorAll(".accent-btn");
+
+    function updateBPMDisplay() {
+      bpmDisplay.textContent = bpm + " BPM";
+    }
+
+    function flashBPMStartCue() {
+      bpmDisplay.style.color = "grey";
+      setTimeout(() => {
+        bpmDisplay.style.color = "black";
+      }, 100);
+    }
+
+    function playClick() {
+      if (skipBeats) return;
+      const time = audioContext.currentTime + 0.01;
+      const osc = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+
+      const isAccent = accentBeats > 0 && currentBeat % accentBeats === 0;
+      osc.frequency.value = isAccent ? 1500 : 1000;
+
+      gain.gain.setValueAtTime(1, time);
+      gain.gain.exponentialRampToValueAtTime(0.001, time + 0.05);
+      osc.connect(gain);
+      gain.connect(audioContext.destination);
+      osc.start(time);
+      osc.stop(time + 0.05);
+
+      if (showPulse) {
+        pulseIndicator.style.backgroundColor = isAccent ? "#00cc44" : "#007BFF";
+        setTimeout(() => {
+          pulseIndicator.style.backgroundColor = "#aaa";
+        }, 100);
+      }
+
+      currentBeat++;
+    }
+
+    function startMetronome() {
+      currentBeat = 0;
+      const interval = (60 / bpm) * 1000;
+      setTimeout(() => {
+        playClick();
+        intervalId = setInterval(playClick, interval);
+      }, firstBeatDelay);
+    }
+
+    function stopMetronome() {
+      clearInterval(intervalId);
+      intervalId = null;
+    }
+
+    function restartMetronomeWithDelay() {
+      skipBeats = true;
+      stopMetronome();
+      bpmDisplay.style.color = "grey";
+      setTimeout(() => {
+        flashBPMStartCue();
+        skipBeats = false;
+        audioContext.resume().then(() => startMetronome());
+      }, skipDuration);
+    }
+
+    bpmSlider.addEventListener("input", () => {
+      bpm = parseInt(bpmSlider.value);
+      updateBPMDisplay();
+      if (intervalId !== null) restartMetronomeWithDelay();
+    });
+
+    startBtn.addEventListener("click", () => {
+      if (intervalId === null) {
+        audioContext.resume().then(() => {
+          startMetronome();
+          startBtn.textContent = "Stop";
+          startBtn.classList.add("running");
+        });
+      } else {
+        stopMetronome();
+        startBtn.textContent = "Start";
+        startBtn.classList.remove("running");
+      }
+    });
+
+    halfBtn.addEventListener("click", () => {
+      bpm = Math.max(30, Math.round(bpm / 2));
+      bpmSlider.value = bpm;
+      updateBPMDisplay();
+      if (intervalId !== null) restartMetronomeWithDelay();
+    });
+
+    doubleBtn.addEventListener("click", () => {
+      bpm = Math.min(300, Math.round(bpm * 2));
+      bpmSlider.value = bpm;
+      updateBPMDisplay();
+      if (intervalId !== null) restartMetronomeWithDelay();
+    });
+
+    tapBtn.addEventListener("click", () => {
+      tapBtn.style.backgroundColor = "#002f66";
+      setTimeout(() => {
+        tapBtn.style.backgroundColor = "#004c99";
+      }, 100);
+
+      const now = Date.now();
+      tapTimes.push(now);
+      if (tapTimes.length > 4) tapTimes.shift();
+
+      if (tapTimes.length >= 2) {
+        let intervals = [];
+        for (let i = 1; i < tapTimes.length; i++) {
+          intervals.push(tapTimes[i] - tapTimes[i - 1]);
+        }
+        const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+        bpm = Math.round(60000 / avgInterval);
+        bpm = Math.min(300, Math.max(30, bpm));
+        bpmSlider.value = bpm;
+        updateBPMDisplay();
+        if (intervalId !== null) restartMetronomeWithDelay();
+      }
+    });
+
+    pulseToggle.addEventListener("click", () => {
+      showPulse = !showPulse;
+      pulseIndicator.style.visibility = showPulse ? "visible" : "hidden";
+      pulseToggle.textContent = showPulse ? "Hide Pulse" : "Show Pulse";
+    });
+
+    accentButtons.forEach(btn => {
+      btn.addEventListener("click", () => {
+        accentBeats = parseInt(btn.dataset.accent);
+        accentButtons.forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        currentBeat = 0;
+      });
+    });
+
+    updateBPMDisplay();
+  </script>
+</body>
+</html>
